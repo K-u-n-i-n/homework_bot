@@ -99,12 +99,20 @@ def check_response(response):
         else:
             return homework
 
+        # if not isinstance(response, dict):
+        #     raise TypeError('Ответ API не является словарем.')
+        # if 'homeworks' not in response:
+        #     raise KeyError('Ключ "homeworks" отсутствует в ответе API.')
+        # if not isinstance(response['homeworks'], list):
+        #     raise TypeError('Тип данных по ключу "homeworks" не является списком.')
+        # return response['homeworks']
+
 
 def parse_status(homework):
     """Извлекает статус домашней работы."""
     if not homework:
         logger.debug('Нет новых статусов домашних работ.')
-        return 'Нет новых статусов домашних работ.'
+        return None
 
     homework_name = homework.get('homework_name', 'Неизвестная работа')
     status = homework.get('status')
@@ -112,8 +120,7 @@ def parse_status(homework):
     if status not in HOMEWORK_VERDICTS:
         error_message = f'Обнаружен неожиданный статус: {status}'
         logger.error(error_message)
-        # send_message(bot, error_message)  # Отправка сообщения в Telegram
-        return error_message
+        return None
 
     global status_homework
     if status_homework == status:
@@ -127,25 +134,30 @@ def parse_status(homework):
 
 def main():
     """Основная логика работы бота."""
+    if not check_tokens():
+        logger.critical('Отсутствуют необходимые переменные окружения.')
+        return
 
-    # Создаем объект класса бота
-    bot = TeleBot(token='TELEGRAM_TOKEN')
+    bot = TeleBot(TELEGRAM_TOKEN)
     timestamp = int(time.time())
 
     while True:
         try:
             response = get_api_answer(timestamp)
+            if response:
+                homeworks = check_response(response)
+                if homeworks:
+                    for homework in homeworks:
+                        message = parse_status(homework)
+                        if message:
+                            send_message(bot, message)
+            time.sleep(RETRY_PERIOD)
 
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
             logging.error(message)
-
-        homework = check_response(response)
-        if homework is not None:
-            message = parse_status(homework)
-            if message is None:
-                continue
-            send_message(bot, message)
+            send_message(bot, f'Сбой в работе программы: {error}')
+            time.sleep(RETRY_PERIOD)
 
 
 if __name__ == '__main__':
