@@ -150,3 +150,7 @@ static/
 posts/static/
 media/
 
+# потом удалить
+homework_test.py
+kittybot.py
+zzz.py
