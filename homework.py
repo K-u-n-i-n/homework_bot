@@ -7,8 +7,8 @@ import requests
 from dotenv import load_dotenv
 from telebot import TeleBot
 
-load_dotenv()
 
+load_dotenv()
 
 PRACTICUM_TOKEN = os.getenv('PRACTICUM_TEST_TOKEN')
 TELEGRAM_TOKEN = os.getenv('MY_TELEGRAM_TOKEN')
@@ -18,7 +18,6 @@ RETRY_PERIOD = 600
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 
-
 HOMEWORK_VERDICTS = {
     'approved': 'Работа проверена: ревьюеру всё понравилось. Ура!',
     'reviewing': 'Работа взята на проверку ревьюером.',
@@ -26,6 +25,7 @@ HOMEWORK_VERDICTS = {
 }
 
 status_homework = None
+last_message = None
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -37,6 +37,8 @@ formatter = logging.Formatter(
     '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 handler.setFormatter(formatter)
+
+logger.debug('Logging configuration is set up correctly.')
 
 
 def check_tokens():
@@ -65,54 +67,48 @@ def send_message(bot, message):
         logger.error(f'Ошибка при отправке сообщения в Telegram: {e}')
 
 
+class APIException(Exception):
+    """Кастомное исключение для обработки ошибок API."""
+
+
 def get_api_answer(timestamp):
     """Делает запрос к эндпоинту API-сервиса."""
-
     try:
-        response = requests.get(
-            ENDPOINT, headers=HEADERS, params=timestamp
-        )
-        response.raise_for_status()
-        response_json = response.json()
-
-        if response_json.get('error', {}).get('need_cookie_update'):
-            logger.error(
-                'Недоступность эндпоинта: требуется обновление cookie.'
+        response = requests.get(ENDPOINT, headers=HEADERS, params={
+                                'from_date': timestamp})
+        if response.status_code != 200:
+            error_message = (
+                f'Эндпоинт {ENDPOINT} недоступен. '
+                f'Код ответа: {response.status_code}'
             )
+            logger.error(error_message)
+            raise APIException(error_message)
 
-        return response_json
-
-    except requests.exceptions.RequestException as e:
+        return response.json()
+    except requests.RequestException as e:
         logger.error(f'Сбой при запросе к эндпоинту: {e}')
-        return None
-
-    except Exception as e:
-        logger.error(f'Неизвестная ошибка: {e}')
-        return None
+        raise APIException(f'Something wrong: {e}')
 
 
 def check_response(response):
-    """Проверяет ответ API."""
-    for key, homework in response.items():
-        if key == "homeworks" and homework == []:
-            return None
-        else:
-            return homework
-
-        # if not isinstance(response, dict):
-        #     raise TypeError('Ответ API не является словарем.')
-        # if 'homeworks' not in response:
-        #     raise KeyError('Ключ "homeworks" отсутствует в ответе API.')
-        # if not isinstance(response['homeworks'], list):
-        #     raise TypeError('Тип данных по ключу "homeworks" не является списком.')
-        # return response['homeworks']
+    """Проверяет ответ API на соответствие документации."""
+    if not isinstance(response, dict):
+        raise TypeError('Ответ API не является словарем.')
+    if 'homeworks' not in response:
+        raise KeyError('Ключ "homeworks" отсутствует в ответе API.')
+    if 'current_date' not in response:
+        raise KeyError('Ключ "current_date" отсутствует в ответе API.')
+    if not isinstance(response['homeworks'], list):
+        raise TypeError('Тип данных по ключу "homeworks" не является списком.')
+    return response['homeworks']
 
 
 def parse_status(homework):
     """Извлекает статус домашней работы."""
-    if not homework:
-        logger.debug('Нет новых статусов домашних работ.')
-        return None
+    if 'homework_name' not in homework:
+        raise KeyError('В ответе API отсутствует ключ `homework_name`.')
+    if 'status' not in homework:
+        raise KeyError('В ответе API отсутствует ключ `status`.')
 
     homework_name = homework.get('homework_name', 'Неизвестная работа')
     status = homework.get('status')
@@ -120,7 +116,7 @@ def parse_status(homework):
     if status not in HOMEWORK_VERDICTS:
         error_message = f'Обнаружен неожиданный статус: {status}'
         logger.error(error_message)
-        return None
+        raise ValueError(error_message)
 
     global status_homework
     if status_homework == status:
@@ -141,22 +137,30 @@ def main():
     bot = TeleBot(TELEGRAM_TOKEN)
     timestamp = int(time.time())
 
+    global last_message
+
     while True:
+        logger.debug('Starting main loop iteration.')
         try:
             response = get_api_answer(timestamp)
             if response:
                 homeworks = check_response(response)
-                if homeworks:
-                    for homework in homeworks:
-                        message = parse_status(homework)
-                        if message:
-                            send_message(bot, message)
+                if not homeworks:
+                    logger.debug('Нет новых статусов домашних работ.')
+                for homework in homeworks:
+                    message = parse_status(homework)
+                    if message:
+                        send_message(bot, message)
+            # обновление метки времени
+            timestamp = response.get('current_date', timestamp)
             time.sleep(RETRY_PERIOD)
 
         except Exception as error:
-            message = f'Сбой в работе программы: {error}'
-            logging.error(message)
-            send_message(bot, f'Сбой в работе программы: {error}')
+            message = f'Неизвестный сбой: {error}'
+            logger.error(message)
+            if message != last_message:
+                send_message(bot, message)
+                last_message = message
             time.sleep(RETRY_PERIOD)
 
 
