@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 import time
 from logging.handlers import RotatingFileHandler
 
@@ -8,7 +9,6 @@ from dotenv import load_dotenv
 from telebot import TeleBot
 
 from exceptions import APIException
-
 
 load_dotenv()
 
@@ -31,14 +31,20 @@ last_message = None
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
-handler = RotatingFileHandler(
+
+file_handler = RotatingFileHandler(
     'my_logger.log', maxBytes=50000000, backupCount=5, encoding='utf-8',
 )
-logger.addHandler(handler)
+stream_handler = logging.StreamHandler(sys.stdout)
+
 formatter = logging.Formatter(
     '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-handler.setFormatter(formatter)
+file_handler.setFormatter(formatter)
+stream_handler.setFormatter(formatter)
+
+logger.addHandler(file_handler)
+logger.addHandler(stream_handler)
 
 logger.debug('Конфигурация журналирования настроена правильно.')
 
@@ -72,8 +78,9 @@ def send_message(bot, message):
 def get_api_answer(timestamp):
     """Делает запрос к эндпоинту API-сервиса."""
     try:
-        response = requests.get(ENDPOINT, headers=HEADERS, params={
-                                'from_date': timestamp})
+        response = requests.get(
+            ENDPOINT, headers=HEADERS, params={'from_date': timestamp}
+        )
         if response.status_code != 200:
             error_message = (
                 f'Эндпоинт {ENDPOINT} недоступен. '
@@ -84,32 +91,24 @@ def get_api_answer(timestamp):
 
         return response.json()
     except requests.RequestException as e:
-        logger.error(f'Сбой при запросе к эндпоинту: {e}')
-        raise APIException(f'Сбой при запросе к эндпоинту: {e}')
-
-
-def log_and_notify_error(error_message):
-    """Логирует и отправляет сообщение об ошибке в Telegram."""
-    global last_message
-    logger.error(error_message)
-    # if last_message != error_message:
-    send_message(error_message)
-    last_message = error_message
+        error_message = f'Сбой при запросе к эндпоинту: {e}'
+        logger.error(error_message)
+        raise APIException(error_message)
 
 
 def check_response(response):
     """Проверяет ответ API на соответствие документации."""
     if not isinstance(response, dict):
         error_message = 'Ответ API не является словарем.'
-        log_and_notify_error(error_message)
+        logger.error(error_message)
         raise TypeError(error_message)
     if 'homeworks' not in response:
         error_message = 'Ключ "homeworks" отсутствует в ответе API.'
-        log_and_notify_error(error_message)
+        logger.error(error_message)
         raise KeyError(error_message)
     if not isinstance(response['homeworks'], list):
         error_message = 'Тип данных по ключу "homeworks" не является списком.'
-        log_and_notify_error(error_message)
+        logger.error(error_message)
         raise TypeError(error_message)
     return response['homeworks']
 
@@ -117,9 +116,13 @@ def check_response(response):
 def parse_status(homework):
     """Извлекает статус домашней работы."""
     if 'homework_name' not in homework:
-        raise KeyError('В ответе API отсутствует ключ `homework_name`.')
+        error_message = 'В ответе API отсутствует ключ `homework_name`.'
+        logger.error(error_message)
+        raise KeyError(error_message)
     if 'status' not in homework:
-        raise KeyError('В ответе API отсутствует ключ `status`.')
+        error_message = 'В ответе API отсутствует ключ `status`.'
+        logger.error(error_message)
+        raise KeyError(error_message)
 
     homework_name = homework.get('homework_name', 'Неизвестная работа')
     status = homework.get('status')
@@ -150,6 +153,10 @@ def main():
 
     bot = TeleBot(TELEGRAM_TOKEN)
     timestamp = int(time.time())
+
+    # # код для отладки бота:
+    # current_unix_time = int(time.time())
+    # timestamp = current_unix_time - 30 * 24 * 60 * 60
 
     global last_message
 
