@@ -7,6 +7,8 @@ import requests
 from dotenv import load_dotenv
 from telebot import TeleBot
 
+from exceptions import APIException
+
 
 load_dotenv()
 
@@ -38,7 +40,7 @@ formatter = logging.Formatter(
 )
 handler.setFormatter(formatter)
 
-logger.debug('Logging configuration is set up correctly.')
+logger.debug('Конфигурация журналирования настроена правильно.')
 
 
 def check_tokens():
@@ -67,10 +69,6 @@ def send_message(bot, message):
         logger.error(f'Ошибка при отправке сообщения в Telegram: {e}')
 
 
-class APIException(Exception):
-    """Кастомное исключение для обработки ошибок API."""
-
-
 def get_api_answer(timestamp):
     """Делает запрос к эндпоинту API-сервиса."""
     try:
@@ -87,19 +85,32 @@ def get_api_answer(timestamp):
         return response.json()
     except requests.RequestException as e:
         logger.error(f'Сбой при запросе к эндпоинту: {e}')
-        raise APIException(f'Something wrong: {e}')
+        raise APIException(f'Сбой при запросе к эндпоинту: {e}')
+
+
+def log_and_notify_error(error_message):
+    """Логирует и отправляет сообщение об ошибке в Telegram."""
+    global last_message
+    logger.error(error_message)
+    # if last_message != error_message:
+    send_message(error_message)
+    last_message = error_message
 
 
 def check_response(response):
     """Проверяет ответ API на соответствие документации."""
     if not isinstance(response, dict):
-        raise TypeError('Ответ API не является словарем.')
+        error_message = 'Ответ API не является словарем.'
+        log_and_notify_error(error_message)
+        raise TypeError(error_message)
     if 'homeworks' not in response:
-        raise KeyError('Ключ "homeworks" отсутствует в ответе API.')
-    if 'current_date' not in response:
-        raise KeyError('Ключ "current_date" отсутствует в ответе API.')
+        error_message = 'Ключ "homeworks" отсутствует в ответе API.'
+        log_and_notify_error(error_message)
+        raise KeyError(error_message)
     if not isinstance(response['homeworks'], list):
-        raise TypeError('Тип данных по ключу "homeworks" не является списком.')
+        error_message = 'Тип данных по ключу "homeworks" не является списком.'
+        log_and_notify_error(error_message)
+        raise TypeError(error_message)
     return response['homeworks']
 
 
@@ -131,7 +142,10 @@ def parse_status(homework):
 def main():
     """Основная логика работы бота."""
     if not check_tokens():
-        logger.critical('Отсутствуют необходимые переменные окружения.')
+        logger.critical(
+            'Отсутствуют необходимые переменные окружения. '
+            'Программа принудительно остановлена.'
+        )
         return
 
     bot = TeleBot(TELEGRAM_TOKEN)
@@ -140,7 +154,7 @@ def main():
     global last_message
 
     while True:
-        logger.debug('Starting main loop iteration.')
+        logger.debug('Запуск цикла.')
         try:
             response = get_api_answer(timestamp)
             if response:
@@ -162,6 +176,9 @@ def main():
                 send_message(bot, message)
                 last_message = message
             time.sleep(RETRY_PERIOD)
+
+        finally:
+            logger.debug('Программа завершила работу.')
 
 
 if __name__ == '__main__':
