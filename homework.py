@@ -124,7 +124,7 @@ def parse_status(homework):
         logger.error(error_message)
         raise KeyError(error_message)
 
-    homework_name = homework.get('homework_name', 'Неизвестная работа')
+    homework_name = homework.get('homework_name')
     status = homework.get('status')
 
     if status not in HOMEWORK_VERDICTS:
