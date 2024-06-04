@@ -27,7 +27,6 @@ HOMEWORK_VERDICTS = {
 }
 
 status_homework = None
-last_message = None
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -51,19 +50,8 @@ logger.debug('Конфигурация журналирования настро
 
 def check_tokens():
     """Проверяет доступность переменных окружения."""
-    missing_tokens = []
-    if not PRACTICUM_TOKEN:
-        missing_tokens.append('PRACTICUM_TEST_TOKEN')
-    if not TELEGRAM_TOKEN:
-        missing_tokens.append('MY_TELEGRAM_TOKEN')
-    if not TELEGRAM_CHAT_ID:
-        missing_tokens.append('MY_TELEGRAM_CHAT_ID')
-    if missing_tokens:
-        logger.critical(
-            f'Отсутствуют переменные окружения: {", ".join(missing_tokens)}')
-        return False
-
-    return True
+    tokens = [PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID]
+    return all(tokens)
 
 
 def send_message(bot, message):
@@ -145,20 +133,21 @@ def parse_status(homework):
 def main():
     """Основная логика работы бота."""
     if not check_tokens():
-        logger.critical(
+        error_message = (
             'Отсутствуют необходимые переменные окружения. '
             'Программа принудительно остановлена.'
         )
-        return
+        logger.critical(error_message)
+        sys.exit(error_message)
 
     bot = TeleBot(TELEGRAM_TOKEN)
     timestamp = int(time.time())
 
+    last_message = None
+
     # # код для отладки бота:
     # current_unix_time = int(time.time())
     # timestamp = current_unix_time - 30 * 24 * 60 * 60
-
-    global last_message
 
     while True:
         logger.debug('Запуск цикла.')
@@ -182,9 +171,9 @@ def main():
             if message != last_message:
                 send_message(bot, message)
                 last_message = message
-            time.sleep(RETRY_PERIOD)
 
         finally:
+            time.sleep(RETRY_PERIOD)
             logger.debug('Программа завершила работу.')
 
 
