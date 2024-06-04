@@ -161,12 +161,6 @@ def main():
                     message = parse_status(homework)
                     send_message(bot, message)
 
-                    # if message:
-                    #     send_message(bot, message)
-                    # else:
-                    #     logger.error(
-                    #         'Ошибка при извлечении статуса домашней работы.'
-                    #     )
             # обновление метки времени
             timestamp = response.get('current_date', timestamp)
 
