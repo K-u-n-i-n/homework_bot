@@ -159,11 +159,16 @@ def main():
                     logger.debug('Нет новых статусов домашних работ.')
                 for homework in homeworks:
                     message = parse_status(homework)
-                    if message:
-                        send_message(bot, message)
+                    send_message(bot, message)
+
+                    # if message:
+                    #     send_message(bot, message)
+                    # else:
+                    #     logger.error(
+                    #         'Ошибка при извлечении статуса домашней работы.'
+                    #     )
             # обновление метки времени
             timestamp = response.get('current_date', timestamp)
-            time.sleep(RETRY_PERIOD)
 
         except Exception as error:
             message = f'Неизвестный сбой: {error}'
