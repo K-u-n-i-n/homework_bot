@@ -145,7 +145,7 @@ def main():
 
     last_message = None
 
-    # # код для отладки бота:
+    # код для отладки бота:
     # current_unix_time = int(time.time())
     # timestamp = current_unix_time - 30 * 24 * 60 * 60
 
